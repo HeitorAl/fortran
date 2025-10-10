@@ -31,7 +31,7 @@ _A flag -g inclui símbolos de debug._
     └── launch.json
 ```
 
-##✅ Passo 4: launch.json para Fortran com gfortran + LLDB
+## ✅ Passo 4: launch.json para Fortran com gfortran + LLDB
 > Crie o arquivo .vscode/launch.json com o seguinte conteúdo:
 ```json
 {
