@@ -1,135 +1,119 @@
 module routines_p
     implicit none
-    public :: DADOSMOD, GEOMAT, FORMAB, MIVEULER, SALVAR_PROPRIEDADES, VISUALIZAR_MATRIZ
+    public :: DADOSMOD, GEOMAT, PULSOPQ, FORMAB, MIVEULER
     private
-    real(kind=8), parameter :: PI = 3.141592653589793d0
     
 contains
 
-    subroutine DADOSMOD(n, COMPI, RAIOI, ESPHI, MEY, MI, RO)
+    subroutine DADOSMOD(n, COMPI, RAIOI, ESPHI, MEY, MI, RO, PI)
         implicit none
         integer :: n
-        real(kind=8) :: MI, RO
+        real(kind=8) :: MI, RO, PI
         real(kind=8), dimension(:), allocatable :: COMPI, RAIOI, ESPHI, MEY
         integer :: i, ios
-        real(kind=8) :: temp_MI, temp_RO  ! Variáveis temporárias para leitura
+        real(kind=8) :: t_MI, t_RO, t_PI
 
         open(unit=10, file='DADOSMOD.txt', status='old', action='read', iostat=ios)
-        if (ios /= 0) then
-            print *, "ERRO: Nao foi possivel abrir o arquivo DADOSMOD.txt"
-            stop
-        endif
-
-        ! Lê número de elementos
-        read(10,*,iostat=ios) n
-        if (ios /= 0) then
-            print *, "ERRO: Nao foi possivel ler o numero de elementos"
-            stop
-        endif
+        if (ios /= 0) stop "ERRO: DADOSMOD.txt nao encontrado."
         
-        print *, "========================================="
-        print *, "Numero de elementos: ", n
-        print *, "========================================="
-
+        read(10,*) n
+        
         allocate(COMPI(n), RAIOI(n), ESPHI(n), MEY(n))
-
-        ! Lê todos os dados em um único loop (6 valores por linha)
-        print *, "Lendo dados completos (6 valores por linha)..."
         do i = 1, n
-            read(10,*,iostat=ios) COMPI(i), RAIOI(i), ESPHI(i), MEY(i), temp_MI, temp_RO
-            if (ios /= 0) then
-                print *, "ERRO: Falha ao ler linha ", i, " do arquivo"
-                print *, "Verifique se o arquivo tem exatamente 6 valores por linha"
-                stop
-            endif
-            
-            ! Armazena MI e RO da PRIMEIRA linha (são constantes para todos os elementos)
+            read(10,*) COMPI(i), RAIOI(i), ESPHI(i), MEY(i), t_MI, t_RO, t_PI
             if (i == 1) then
-                MI = temp_MI
-                RO = temp_RO
-            else
-                ! Verificação de consistência (opcional mas recomendada)
-                if (abs(temp_MI - MI) > 1.0d-12 .or. abs(temp_RO - RO) > 1.0d-6) then
-                    print *, "AVISO: Valores de MI/RO inconsistentes na linha", i
-                    print *, "  Esperado: MI =", MI, " RO =", RO
-                    print *, "  Lido:     MI =", temp_MI, " RO =", temp_RO
-                endif
+                MI = t_MI
+                RO = t_RO
+                PI = t_PI
             endif
-            
-            ! Impressão formatada dos 6 valores
-            print '(A,I3,A,6F10.4)', "  Elemento ", i, ": ", &
-                  COMPI(i), RAIOI(i), ESPHI(i), MEY(i), temp_MI, temp_RO
         end do
-
         close(10)
-
-        print *, "========================================="
-        print *, "Propriedades do Material (constantes):"
-        print *, "  MI (permeabilidade): ", MI
-        print *, "  RO (densidade):      ", RO
-        print *, "========================================="
     end subroutine DADOSMOD
 
-    subroutine GEOMAT(n, COMPI, RAIOI, ESPHI, MEY, MI, RO, RESISTI, INDUCTI, COMPLII)
+    subroutine GEOMAT(n, COMPI, RAIOI, ESPHI, MEY, MI, RO, PI, RESISTI, INDUCTI, COMPLII)
         implicit none
         integer :: n
-        real(kind=8) :: MI, RO
-        real(kind=8), dimension(n) :: COMPI, RAIOI, ESPHI, MEY
-        real(kind=8), dimension(n) :: RESISTI, INDUCTI, COMPLII
-        integer :: m
+        real(kind=8) :: MI, RO, PI
+        real(kind=8) :: COMPI(n), RAIOI(n), ESPHI(n), MEY(n)
+        real(kind=8) :: RESISTI(n), INDUCTI(n), COMPLII(n)
         real(kind=8) :: raio_quad, raio_cub, raio_quarta
-        
-        print *, "Calculando propriedades dos elementos..."
-        print *, ""
-        
+        integer :: m, ios
+
         do m = 1, n
             raio_quad = RAIOI(m)**2
             raio_cub = RAIOI(m)**3
             raio_quarta = RAIOI(m)**4
             
-            ! Resistência (considerando efeito do número de espiras implícito em MEY)
             RESISTI(m) = (8.0d0 * MI * COMPI(m)) / (PI * raio_quarta)
-            
-            ! Indutância
             INDUCTI(m) = (9.0d0 * RO * COMPI(m)) / (4.0d0 * PI * raio_quad)
-            
-            ! Compliância (flexibilidade) - MEY agora vem diretamente do arquivo
             COMPLII(m) = (3.0d0 * PI * COMPI(m) * raio_cub) / (2.0d0 * MEY(m) * ESPHI(m))
-            
-            print '(A,I3)', "  Elemento ", m
-            print '(A,ES14.6)', "    Resistencia:  ", RESISTI(m)
-            print '(A,ES14.6)', "    Indutancia:   ", INDUCTI(m)
-            print '(A,ES14.6)', "    Compliancia:  ", COMPLII(m)
-            print *, ""
+ 
         end do
 
-        print *, "========================================="
-        print *, "Calculo das propriedades concluido!"
-        print *, "========================================="
+        open(unit=20, file='GEOMAT_R.txt', status='replace', action='write', iostat=ios)
+        
+        write(20,'(A,F12.6)') 'MI: ', MI
+        write(20,'(A,F12.6)') 'RO: ', RO
+        write(20,'(A,F12.8)') 'Pi: ', PI
+        write(20,'(A,I4)')    'N : ', n
+        write(20,'(A)') '================================================================'
+        write(20,'(A)') ''
+        write(20,'(A8,5A15)') 'Trecho', 'COMPI', 'RAIOI', 'ESPHI', 'MEY', 'RESISTI'
+        write(20,'(A8,5A15)') '', '', '', '', '', 'INDUCTI'
+        write(20,'(A8,5A15)') '', '', '', '', '', 'COMPLII'
+        write(20,'(A)') '----------------------------------------------------------------'
+        
+        do m = 1, n
+            write(20,'(I8,5ES15.6)') m, COMPI(m), RAIOI(m), ESPHI(m), MEY(m), RESISTI(m)
+            write(20,'(8X,4(15X),ES15.6)') INDUCTI(m)
+            write(20,'(8X,4(15X),ES15.6)') COMPLII(m)
+            write(20,'(A)') ''
+        end do
+        
+        write(20,'(A)') '================================================================'
+        close(20)
     end subroutine GEOMAT
 
-    subroutine FORMAB(n, A, b, RESISTI, INDUCTI, COMPLII)
+    subroutine PULSOPQ(IT, HT, PI, PIN, QIN)
         implicit none
-        integer :: n
-        real(kind=8), dimension(n,n) :: A
-        real(kind=8), dimension(n) :: b
-        real(kind=8), dimension(:) :: RESISTI, INDUCTI, COMPLII
-        integer :: i, j
-        
-        print *, ""
-        print *, "========================================="
-        print *, "MONTANDO MATRIZ A DO SISTEMA"
-        print *, "========================================="
-        
-        ! Inicializa matriz A com zeros
-        A = 0.0d0
-        
-        ! Diagonal principal = 1 (será sobrescrita pelos coeficientes específicos)
-        do i = 1, n
-            A(i,i) = 1.0d0
-        end do
+        integer :: IT
+        real(kind=8) :: HT, PI
+        real(kind=8) :: PIN, QIN
+        real(kind=8) :: TS, TCC, PS, PD, QMAX, TI, A, B
 
-         ! --- LINHA 1 ---
+        TS = 0.3d0
+        TCC = 1.0d0
+        PS = 120.0d0
+        PD = 80.0d0
+        QMAX = 300.0d0
+        
+        TI = IT * HT
+        
+        if (TI <= TS) then
+            PIN = PD + ((PS - PD) / TS) * TI
+            QIN = QMAX * (SIN(PI * TI / TS))**2
+        endif
+
+        if (TI > TS .and. TI <= TCC) then
+            A = (PS - PD) / (TS - TCC)
+            B = (PD * TS - PS * TCC) / (TS - TCC)
+            PIN = A * TI + B
+            QIN = 0.0d0
+        endif
+    end subroutine PULSOPQ
+
+    subroutine FORMAB(n, RESISTI, INDUCTI, COMPLII, HT, PI, IT, A, b)
+        implicit none
+        integer:: n, IT
+        real(kind=8) :: HT, PI
+        real(kind=8) :: RESISTI(n), INDUCTI(n), COMPLII(n)
+        real(kind=8) :: A(122,122)
+        real(kind=8) :: b(122)
+        real(kind=8) :: PIN, QIN
+
+        ! Matriz A
+        A = 0.0d0
+        ! --- LINHA 1 ---
         A(1,4)  =  1.0d0/COMPLII(1)
         A(1,10) =  1.0d0/COMPLII(1)
         A(1,16) =  1.0d0/COMPLII(1)
@@ -672,309 +656,186 @@ contains
         A(122,121) = 1.0d0/INDUCTI(61)
         A(122,122) = -RESISTI(61)/INDUCTI(61)
 
-        
-        ! Vetor b - inicialização
+        ! Vetor b
         b = 0.0d0
-        if (n >= 1) b(1) = 1.0d0
-        if (n >= 2) b(2) = 1.0d0
+        call PULSOPQ(IT, HT, PI, PIN, QIN)
+        b(1) = PIN
+        b(2) = QIN
+        print *, b
 
-        print *, "Matriz A montada com sucesso!"
-        print *, "Dimensao: ", n, "x", n
-        print *, "========================================="
     end subroutine FORMAB
 
-    subroutine MIVEULER(n, A, b, resultados_file)
+    ! Metodo de euler vetorial Ax + b
+    subroutine MIVEULER(n, A, b, HT, x_old, x_new)
         implicit none
-        integer :: n
-        real(kind=8) :: A(n,n)
-        real(kind=8) :: b(n)
-        character(len=*) :: resultados_file
-        integer :: i, j, nt
-        real(kind=8), allocatable :: Y(:), dYdt(:), Y_analitico(:), Y0(:)
-        real(kind=8) :: tempo, tempo_total, dt
+        integer, intent(in) :: n
+        real(kind=8), intent(in) :: HT
+        real(kind=8), intent(in) :: A(122,122)
+        real(kind=8), intent(in) :: b(122), x_old(122)
+        real(kind=8), intent(out) :: x_new(122)
+        real(kind=8) :: dx(122)
+        integer :: i, j
+        integer :: dim
         
-        ! Parâmetros
-        tempo_total = 1.0d0
-        dt = 0.1d0
-        nt = int(tempo_total / dt)
+        ! Dimensão efetiva do sistema
+        dim = 2*n
         
-        open(unit=20, file=resultados_file, status='replace', action='write')
+        ! Verificação de segurança
+        if (dim > 122) then
+            print *, "ERRO: dimensão excede tamanho do array"
+            stop
+        endif
         
-        write(20, '(A)') '========================================='
-        write(20, '(A)') 'RESULTADOS COMPLETOS DA SIMULACAO'
-        write(20, '(A)') '========================================='
-        write(20, '(A,I5)') 'Numero de elementos: ', n
-        write(20, '(A,F10.6)') 'Tempo total da simulacao: ', tempo_total
-        write(20, '(A,I10)') 'Numero de passos: ', nt
-        write(20, '(A,F10.6)') 'Passo de tempo dt: ', dt
-        write(20, '(A)') ''
-
-        allocate(Y(n), dYdt(n), Y_analitico(n), Y0(n))
-
-        print *, ""
-        print *, "========================================="
-        print *, "METODO DE EULER - PARAMETROS AUTOMATICOS"
-        print *, "========================================="
-        print *, "Tempo total: ", tempo_total, " segundos"
-        print *, "Intervalo dt: ", dt, " segundos"
-        print *, "Numero de passos: ", nt
-        print *, ""
+        ! Inicialização
+        dx = 0.0d0
         
-        Y0 = 0.0d0
-        Y = Y0
-        
-        print *, "Vetor inicial Y0:"
-        print '(5X, 100ES15.6)', (Y0(i), i = 1, n)
-
-        write(20, '(A)') 'Condicao inicial (tempo = 0.0):'
-        write(20, '(5X, 100ES15.6)') (Y0(i), i = 1, n)
-        write(20, '(A)') ''
-        
-        write(20, '(A)') '========================================='
-        write(20, '(A)') 'EVOLUCAO TEMPORAL - METODO DE EULER'
-        write(20, '(A)') '========================================='
-        write(20, '(A5, 2X, A10, 100(4X, A2, I3.3, A1))') &
-              'Passo', 'Tempo', ('Y(', i, ')', i = 1, n)
-        write(20, '(A)') '-----------------------------------------' 
-
-        print *, ""
-        print *, "Executando metodo de Euler..."
-        print *, "----------------------------------------"
-        
-        tempo = 0.0d0
-        do j = 0, nt
-            write(20, '(I5, 2X, F10.6, 100(2X, ES15.6))') j, tempo, (Y(i), i = 1, n)
-            print '(A,I5,A,F10.6)', "Passo ", j, " (t=", tempo, ")"
-            
-            if (j < nt) then
-                dYdt = matmul(A, Y) + b
-                Y = Y + dYdt * dt
-                tempo = tempo + dt
-            end if
+        ! Calcula dx = A*x_old + b
+        do i = 1, dim
+            do j = 1, dim
+                dx(i) = dx(i) + A(i,j) * x_old(j)
+            end do
+            dx(i) = dx(i) + b(i)
         end do
         
-        write(20, '(A)') ''
-        write(20, '(A)') '========================================='
-        write(20, '(A)') 'SOLUCAO ANALITICA'
-        write(20, '(A)') '========================================='
-        write(20, '(A)') 'Para o sistema dY/dt = Y + 1 com Y0 = 0:'
-        write(20, '(A)') 'Solucao analitica: Y(x) = exp(x) - 1'
-        write(20, '(A)') ''
-        write(20, '(A10, 2X, A15, 2X, A15, 2X, A15)') 'Componente', 'Y0', 'Y_numerico', 'Y_analitico'
-        write(20, '(A)') '-----------------------------------------------------------'
-        
-        print *, ""
-        print *, "========================================="
-        print *, "SOLUCAO ANALITICA NO TEMPO FINAL"
-        print *, "========================================="
-        
-        do i = 1, n
-            Y_analitico(i) = exp(tempo_total) - 1.0d0
-            write(20, '(I10, 2X, ES15.6, 2X, ES15.6, 2X, ES15.6)') &
-                  i, Y0(i), Y(i), Y_analitico(i)
+        ! Método de Euler: x_new = x_old + HT * dx
+        do i = 1, dim
+            x_new(i) = x_old(i) + HT * dx(i)
         end do
-        
-        write(20, '(A)') ''
-        write(20, '(A)') '========================================='
-        write(20, '(A)') 'FIM DOS RESULTADOS'
-        write(20, '(A)') '========================================='
-        
-        close(20)
-        
-        print *, ""
-        print *, "Simulacao concluida!"
-        print *, "Resultados salvos em '", trim(resultados_file), "'"
-        print *, "========================================="
 
-        deallocate(Y, dYdt, Y_analitico, Y0)
     end subroutine MIVEULER
- 
-    subroutine SALVAR_PROPRIEDADES(n, COMPI, RAIOI, ESPHI, MEY, RESISTI, INDUCTI, COMPLII, props_file)
-        implicit none
-        integer :: n
-        real(kind=8), dimension(n) :: COMPI, RAIOI, ESPHI, MEY
-        real(kind=8), dimension(n) :: RESISTI, INDUCTI, COMPLII
-        character(len=*) :: props_file
-        integer :: i
-        
-        open(unit=30, file=props_file, status='replace', action='write')
-        
-        write(30, '(A)') '========================================================================================='
-        write(30, '(A)') 'PROPRIEDADES DOS ELEMENTOS'
-        write(30, '(A)') '========================================================================================='
-        write(30, '(A, I5)') 'Numero de elementos: ', n
-        write(30, '(A)') ''
-        write(30, '(A8, 7A12)') 'Elemento', 'COMP', 'RAIO', 'ESP', 'MEY', 'RESIST', 'INDUCT', 'COMPLII'
-        write(30, '(A)') '-------------------------------------------------------------------------------------------'
-        
-        do i = 1, n
-            write(30, '(I8, 7ES12.4)') i, COMPI(i), RAIOI(i), ESPHI(i), MEY(i), &
-                                      RESISTI(i), INDUCTI(i), COMPLII(i)
-        end do
-        
-        close(30)
-        
-        print *, ""
-        print *, "Propriedades salvas em '", trim(props_file), "'"
-    end subroutine SALVAR_PROPRIEDADES
- 
-    subroutine VISUALIZAR_MATRIZ(n, A, arquivo_viz)
-        implicit none
-        integer :: n
-        real(kind=8), dimension(n,n) :: A
-        character(len=*) :: arquivo_viz
-        integer :: i, j, n_nao_zeros
-        real(kind=8) :: tol
-        
-        tol = 1.0d-15
-        n_nao_zeros = 0
-        
-        ! Contar elementos não-nulos
-        do i = 1, n
-            do j = 1, n
-                if (abs(A(i,j)) > tol) then
-                    n_nao_zeros = n_nao_zeros + 1
-                endif
-            end do
-        end do
-        
-        open(unit=40, file=arquivo_viz, status='replace', action='write')
-        
-        write(40, '(A)') '================================================================================'
-        write(40, '(A)') '                    VISUALIZACAO DA MATRIZ ESPARSA A'
-        write(40, '(A)') '================================================================================'
-        write(40, '(A)') ''
-        write(40, '(A,I6,A,I6)') 'Dimensao da matriz: ', n, ' x ', n
-        write(40, '(A,I8)') 'Total de elementos: ', n*n
-        write(40, '(A,I8)') 'Elementos nao-nulos: ', n_nao_zeros
-        write(40, '(A,F8.4,A)') 'Esparsidade: ', 100.0d0*(1.0d0 - real(n_nao_zeros,8)/real(n*n,8)), '%'
-        write(40, '(A)') ''
-        write(40, '(A)') '================================================================================'
-        write(40, '(A)') 'LISTA DE ELEMENTOS NAO-NULOS (formato: LINHA, COLUNA, VALOR)'
-        write(40, '(A)') '================================================================================'
-        write(40, '(A)') ''
-        write(40, '(A6, 2X, A6, 2X, A20)') 'Linha', 'Coluna', 'Valor'
-        write(40, '(A)') '--------------------------------------------------------------------------------'
-        
-        do i = 1, n
-            do j = 1, n
-                if (abs(A(i,j)) > tol) then
-                    write(40, '(I6, 2X, I6, 2X, ES20.10)') i, j, A(i,j)
-                endif
-            end do
-        end do
-        
-        write(40, '(A)') ''
-        write(40, '(A)') '================================================================================'
-        write(40, '(A)') '                    MAPA DE ESPARSIDADE DA MATRIZ'
-        write(40, '(A)') '================================================================================'
-        write(40, '(A)') ''
-        write(40, '(A)') 'Legenda: * = elemento nao-nulo,  . = zero'
-        write(40, '(A)') ''
-        
-        ! Cabeçalho com números das colunas (dezenas)
-        write(40, '(A6)', advance='no') '      '
-        do j = 1, n
-            if (mod(j, 10) == 0) then
-                write(40, '(I1)', advance='no') mod(j/10, 10)
-            else
-                write(40, '(A1)', advance='no') ' '
-            endif
-        end do
-        write(40, '(A)') ''
-        
-        ! Cabeçalho com números das colunas (unidades)
-        write(40, '(A6)', advance='no') '      '
-        do j = 1, n
-            write(40, '(I1)', advance='no') mod(j, 10)
-        end do
-        write(40, '(A)') ''
-        write(40, '(A)') ''
-        
-        ! Mapa completo da matriz (todas as linhas e colunas)
-        do i = 1, n
-            write(40, '(I5,A1)', advance='no') i, ':'
-            do j = 1, n
-                if (abs(A(i,j)) > tol) then
-                    write(40, '(A1)', advance='no') '*'
-                else
-                    write(40, '(A1)', advance='no') '.'
-                endif
-            end do
-            write(40, '(A)') ''
-        end do
-        
-        write(40, '(A)') ''
-        write(40, '(A)') '================================================================================'
-        
-        close(40)
-        
-        print *, ""
-        print *, "Visualizacao da matriz salva em '", trim(arquivo_viz), "'"
-        print *, "  Elementos nao-nulos: ", n_nao_zeros, " de ", n*n
-        print *, "  Esparsidade: ", 100.0d0*(1.0d0 - real(n_nao_zeros,8)/real(n*n,8)), "%"
-    end subroutine VISUALIZAR_MATRIZ
- 
-end module routines_p
 
+end module routines_p
+    
 program ZERODMOD
     use routines_p
     implicit none
-    integer :: n, n_test
-    real(kind=8) :: MI, RO
+    
+    integer :: n, IT, NT, i, j, k, ios
+    integer, dimension(4) :: indices
+    real(kind=8) :: MI, RO, PI, HT, TT, tempo
     real(kind=8), dimension(:), allocatable :: COMPI, RAIOI, ESPHI, MEY
     real(kind=8), dimension(:), allocatable :: RESISTI, INDUCTI, COMPLII
-    real(kind=8), dimension(:,:), allocatable :: A
-    real(kind=8), dimension(:), allocatable :: b
-
-    print *, ""
-    print *, "========================================="
-    print *, "  PROGRAMA ZERODMOD - INICIANDO"
-    print *, "========================================="
-    print *, ""
-
-    ! 1. Ler dados no NOVO formato (6 valores por linha)
-    call DADOSMOD(n, COMPI, RAIOI, ESPHI, MEY, MI, RO)
+    real(kind=8), dimension(122,122) :: A
+    real(kind=8), dimension(122) :: b, x_old, x_new
+    real(kind=8), dimension(:,:), allocatable :: resultados
     
-    ! 2. Calcular propriedades
+    ! Índices dos trechos que queremos monitorar
+    indices = (/16, 30, 48, 49/)
+    
+    write(*,'(A)') '========================================================'
+    write(*,'(A)') '           SIMULACAO ZERODMOD - INICIANDO'
+    write(*,'(A)') '========================================================'
+    write(*,*)
+    
+    call DADOSMOD(n, COMPI, RAIOI, ESPHI, MEY, MI, RO, PI)
+    write(*,'(A,I4)') 'Numero de trechos lidos: ', n
+    write(*,*)
+    
     allocate(RESISTI(n), INDUCTI(n), COMPLII(n))
-    call GEOMAT(n, COMPI, RAIOI, ESPHI, MEY, MI, RO, RESISTI, INDUCTI, COMPLII)
+    call GEOMAT(n, COMPI, RAIOI, ESPHI, MEY, MI, RO, PI, RESISTI, INDUCTI, COMPLII)
+    write(*,'(A)') 'Propriedades geometricas calculadas e salvas.'
+    write(*,*)
     
-    ! 3. Salvar propriedades
-    call SALVAR_PROPRIEDADES(n, COMPI, RAIOI, ESPHI, MEY, RESISTI, INDUCTI, COMPLII, 'propriedades_elementos.txt')
+    HT = 0.01d0
+    TT = 1.0d0
+    NT = int(TT / HT)
     
-    ! 4. Definir dimensão para teste
-    print *, ""
-    print *, "========================================="
-    print *, "MONTAGEM DO SISTEMA LINEAR"
-    print *, "========================================="
+    allocate(resultados(NT+1, 1+4*2))  ! tempo + 4 trechos × 2 variáveis (P e Q)
     
-    n_test = 122  ! Dimensão necessária para acomodar todos os índices
+    x_old = 0.0d0
+    x_new = 0.0d0
+    resultados = 0.0d0
     
-    ! 5. Alocar matriz A e vetor b
-    allocate(A(n_test, n_test), b(n_test))
+    write(*,'(A)') 'Iniciando simulacao temporal...'
+    write(*,'(A,I8)') 'Numero de passos de tempo: ', NT
+    write(*,*)
     
-    ! 6. Montar sistema linear
-    call FORMAB(n_test, A, b, RESISTI, INDUCTI, COMPLII)
+    do IT = 0, NT
+        tempo = IT * HT
+        
+        ! Forma a matriz A e vetor b para este instante de tempo
+        call FORMAB(n, RESISTI, INDUCTI, COMPLII, HT, PI, IT, A, b)
+        
+        ! Aplica método de Euler
+        call MIVEULER(n, A, b, HT, x_old, x_new)
+        
+        ! Armazena resultados para os trechos de interesse
+        resultados(IT+1, 1) = tempo
+        do k = 1, 4
+            j = indices(k)
+            ! Pressão no trecho j está na posição 2*j-1
+            ! Vazão no trecho j está na posição 2*j
+            resultados(IT+1, 2 + (k-1)*2) = x_new(2*j - 1)  ! Pressão
+            resultados(IT+1, 3 + (k-1)*2) = x_new(2*j)      ! Vazão
+        end do
+        
+        ! Atualiza para próximo passo
+        x_old = x_new
+        
+        if (mod(IT, max(1, NT/10)) == 0) then
+            write(*,'(A,F8.2,A)') 'Progresso: ', (100.0d0*IT)/NT, '%'
+        endif
+    end do
     
-    ! 7. Visualizar matriz esparsa
-    call VISUALIZAR_MATRIZ(n_test, A, 'visualizacao_matriz.txt')
+    write(*,*)
+    write(*,'(A)') 'Simulacao concluida!'
+    write(*,*)
     
-    ! 8. Executar método de Euler
-    call MIVEULER(n_test, A, b, 'resultados_completos.txt')
-
-    ! Liberar memória
+    ! Salva resultados
+    open(unit=30, file='resultados_simulacao.csv', status='replace', action='write', iostat=ios)
+    if (ios /= 0) stop "ERRO: Nao foi possivel criar arquivo de resultados."
+    
+    write(30,'(A)') 'tempo,P_16,Q_16,P_30,Q_30,P_48,Q_48,P_49,Q_49'
+    
+    do IT = 1, NT+1
+        write(30,'(ES15.8,8(A,ES15.8))') resultados(IT,1), &
+                                        (',', resultados(IT,i), i=2,9)
+    end do
+    
+    close(30)
+    
+    write(*,'(A)') 'Resultados salvos em: resultados_simulacao.csv'
+    write(*,*)
+    
+    ! Arquivo de informações
+    open(unit=31, file='info_simulacao.txt', status='replace', action='write', iostat=ios)
+    if (ios /= 0) stop "ERRO: Nao foi possivel criar arquivo de informacoes."
+    
+    write(31,'(A)') '================================================================'
+    write(31,'(A)') '         INFORMACOES DA SIMULACAO ZERODMOD'
+    write(31,'(A)') '================================================================'
+    write(31,'(A,F12.8)') 'Passo de tempo (HT): ', HT
+    write(31,'(A,F12.6)') 'Tempo total (TT)   : ', TT
+    write(31,'(A,I10)')   'Num. de passos (NT): ', NT
+    write(31,'(A,I6)')    'Num. de trechos (n): ', n
+    write(31,'(A,F12.8)') 'Viscosidade (MI)   : ', MI
+    write(31,'(A,F12.6)') 'Densidade (RO)     : ', RO
+    write(31,'(A,F12.10)')'Pi                 : ', PI
+    write(31,'(A)') 'Indices monitorados    : 16, 30, 48, 49'
+    write(31,'(A)') '================================================================'
+    write(31,'(A)') ''
+    write(31,'(A)') 'Estrutura do vetor de estado:'
+    write(31,'(A)') '  Posicao 2*j-1: Pressao no trecho j'
+    write(31,'(A)') '  Posicao 2*j  : Vazao no trecho j'
+    write(31,'(A)') ''
+    write(31,'(A)') 'Colunas no arquivo CSV:'
+    write(31,'(A)') '  1: tempo'
+    write(31,'(A)') '  2-3:  P_16, Q_16'
+    write(31,'(A)') '  4-5:  P_30, Q_30'
+    write(31,'(A)') '  6-7:  P_48, Q_48'
+    write(31,'(A)') '  8-9:  P_49, Q_49'
+    write(31,'(A)') '================================================================'
+    
+    close(31)
+    
+    write(*,'(A)') 'Informacoes salvas em: info_simulacao.txt'
+    write(*,*)
+    write(*,'(A)') '========================================================'
+    write(*,'(A)') '           SIMULACAO ZERODMOD - FINALIZADA'
+    write(*,'(A)') '========================================================'
+    
     deallocate(COMPI, RAIOI, ESPHI, MEY)
     deallocate(RESISTI, INDUCTI, COMPLII)
-    deallocate(A, b)
-
-    print *, ""
-    print *, "========================================="
-    print *, "  EXECUCAO CONCLUIDA COM SUCESSO"
-    print *, "========================================="
-    print *, "Arquivos gerados:"
-    print *, "  1. resultados_completos.txt"
-    print *, "  2. propriedades_elementos.txt"
-    print *, "  3. visualizacao_matriz.txt"
-    print *, "========================================="
+    deallocate(resultados)
+    
 end program ZERODMOD
